@@ -4,7 +4,7 @@ name: IISM seat check
 # backup way to restart the chain.)
 on:
   schedule:
-    - cron: "17 * * * *"     # backup restarter, hourly
+    - cron: "17 * * * *"     # hourly: restart the watch only if it has stopped
   workflow_dispatch:         # "Run workflow" button
     inputs:
       test_alert:
@@ -17,8 +17,8 @@ on:
 permissions:
   actions: write             # lets a run start the next run
   contents: read
-concurrency:                 # only one watch at a time; tests run separately
-  group: seat-watch-${{ inputs.test_alert && 'test' || 'main' }}
+concurrency:                 # only one watch at a time; tests and the hourly restarter run separately
+  group: seat-watch-${{ github.event_name == 'schedule' && 'restart' || (inputs.test_alert && 'test' || 'main') }}
   cancel-in-progress: false
 jobs:
   check:
@@ -34,7 +34,20 @@ jobs:
       CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
       CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
     steps:
+      - name: Restart the watch if it has stopped (hourly backup)
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          active=0
+          for st in in_progress queued; do
+            n=$(gh run list -R "$GITHUB_REPOSITORY" -w check.yml -e workflow_dispatch -s $st --json databaseId -q length)
+            active=$((active + n))
+          done
+          if [ "$active" -eq 0 ]; then gh workflow run check.yml --ref main -R "$GITHUB_REPOSITORY"; echo "Watch had stopped: restarted it."
+          else echo "Watch is running: nothing to do."; fi
       - uses: actions/checkout@v4
+        if: ${{ github.event_name != 'schedule' }}
       - name: Test alert (fails on purpose so GitHub emails you)
         if: ${{ inputs.test_alert }}
         run: |
@@ -42,10 +55,10 @@ jobs:
           echo "Failing on purpose to test GitHub's failure email."
           exit 3
       - name: Check every 5 minutes (fails on purpose when seats are open, so GitHub emails you)
-        if: ${{ !inputs.test_alert }}
+        if: ${{ github.event_name != 'schedule' && !inputs.test_alert }}
         run: python3 check_seats.py --every 300 --for $(( ${{ inputs.minutes || '330' }} * 60 ))
       - name: Start the next run (keeps the watch going)
-        if: ${{ !cancelled() && !inputs.test_alert }}
+        if: ${{ !cancelled() && github.event_name != 'schedule' && !inputs.test_alert }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run check.yml --ref main -R "$GITHUB_REPOSITORY"
