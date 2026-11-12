@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"   # every 5 minutes (GitHub may run it a few minutes late)
   workflow_dispatch:         # "Run workflow" button for a manual check
+    inputs:
+      test_alert:
+        description: "Test: send a test alert, then fail on purpose (checks push + GitHub email)"
+        type: boolean
+        default: false
 concurrency:
   group: seat-check
   cancel-in-progress: false
@@ -12,7 +17,18 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Test alert (fails on purpose so GitHub emails you)
+        if: ${{ inputs.test_alert }}
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+        run: |
+          python3 check_seats.py --test-alert
+          echo "Failing on purpose to test GitHub's failure email."
+          exit 3
       - name: Check seats (fails on purpose when seats are open, so GitHub emails you)
+        if: ${{ !inputs.test_alert }}
         env:
           IISM_COURSE: Snow Skiing Courses at Gulmarg
           IISM_LEVEL: Basic SSC
