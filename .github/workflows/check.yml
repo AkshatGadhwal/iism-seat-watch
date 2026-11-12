@@ -1,7 +1,7 @@
 name: IISM seat check
 # Each run checks every 5 minutes for ~5.5 hours, then starts the next run itself, so the watch
 # never stops. (GitHub's own scheduler is unreliable for frequent schedules; it's kept only as a
-# backup way to restart the chain.)
+# backup way to restart the chain.)b
 on:
   schedule:
     - cron: "17 * * * *"     # hourly: restart the watch only if it has stopped
