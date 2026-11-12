@@ -66,17 +66,21 @@ class Form(HTMLParser):
         return [(v, t) for v, t in self.options.get(name, []) if v != "0"]
 
 
+def tls():
+    """python.org Python on a Mac doesn't trust common certificates without certifi."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
 class Site:
     def __init__(self, url):
         self.url = url
-        try:  # python.org Python on a Mac doesn't trust the site's certificate without certifi
-            import certifi
-            ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ctx = ssl.create_default_context()
         self.http = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
-            urllib.request.HTTPSHandler(context=ctx))
+            urllib.request.HTTPSHandler(context=tls()))
 
     def get(self):
         return Form(self._open(urllib.request.Request(self.url)))
@@ -130,7 +134,8 @@ def alert(msg):
     if phone and key:
         q = urllib.parse.urlencode({"phone": phone, "text": "IISM: " + msg, "apikey": key})
         try:
-            urllib.request.urlopen(f"https://api.callmebot.com/whatsapp.php?{q}", timeout=60)
+            urllib.request.urlopen(f"https://api.callmebot.com/whatsapp.php?{q}", timeout=60,
+                                   context=tls())
         except Exception as e:
             print(f"whatsapp failed: {str(e)[:80]}")
     topic = os.environ.get("NTFY_TOPIC")
@@ -138,7 +143,7 @@ def alert(msg):
         req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(), headers={
             "Title": "IISM seats", "Priority": "urgent", "Tags": "rotating_light"})
         try:
-            urllib.request.urlopen(req, timeout=30)
+            urllib.request.urlopen(req, timeout=30, context=tls())
         except Exception as e:
             print(f"push failed: {e}")
     if sys.platform == "darwin":
