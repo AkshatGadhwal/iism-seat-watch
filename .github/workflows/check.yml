@@ -1,40 +1,51 @@
 name: IISM seat check
+# Each run checks every 5 minutes for ~5.5 hours, then starts the next run itself, so the watch
+# never stops. (GitHub's own scheduler is unreliable for frequent schedules; it's kept only as a
+# backup way to restart the chain.)
 on:
   schedule:
-    - cron: "3-58/5 * * * *"  # every 5 min at :03, :08, ... (off-peak) (GitHub may run it a few minutes late)
-  workflow_dispatch:         # "Run workflow" button for a manual check
+    - cron: "17 * * * *"     # backup restarter, hourly
+  workflow_dispatch:         # "Run workflow" button
     inputs:
       test_alert:
         description: "Test: send a test alert, then fail on purpose (checks push + GitHub email)"
         type: boolean
         default: false
-concurrency:
-  group: seat-check
+      minutes:
+        description: "How long this run keeps checking (minutes)"
+        default: "330"
+permissions:
+  actions: write             # lets a run start the next run
+  contents: read
+concurrency:                 # only one watch at a time; tests run separately
+  group: seat-watch-${{ inputs.test_alert && 'test' || 'main' }}
   cancel-in-progress: false
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 350
+    env:
+      PYTHONUNBUFFERED: "1"
+      IISM_COURSE: Snow Skiing Courses at Gulmarg
+      IISM_LEVEL: Basic SSC
+      IISM_STATE: RAJASTHAN
+      IISM_MOBILE: ${{ secrets.IISM_MOBILE }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+      CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Test alert (fails on purpose so GitHub emails you)
         if: ${{ inputs.test_alert }}
-        env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
-          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
         run: |
           python3 check_seats.py --test-alert
           echo "Failing on purpose to test GitHub's failure email."
           exit 3
-      - name: Check seats (fails on purpose when seats are open, so GitHub emails you)
+      - name: Check every 5 minutes (fails on purpose when seats are open, so GitHub emails you)
         if: ${{ !inputs.test_alert }}
+        run: python3 check_seats.py --every 300 --for $(( ${{ inputs.minutes || '330' }} * 60 ))
+      - name: Start the next run (keeps the watch going)
+        if: ${{ !cancelled() && !inputs.test_alert }}
         env:
-          IISM_COURSE: Snow Skiing Courses at Gulmarg
-          IISM_LEVEL: Basic SSC
-          IISM_STATE: RAJASTHAN
-          IISM_MOBILE: ${{ secrets.IISM_MOBILE }}
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
-          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
-        run: python3 check_seats.py
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run check.yml --ref main -R "$GITHUB_REPOSITORY"

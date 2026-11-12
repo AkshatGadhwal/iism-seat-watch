@@ -156,6 +156,8 @@ def alert(msg):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--every", type=int, metavar="SEC", help="keep checking (min 120 s) until seats open")
+    ap.add_argument("--for", dest="duration", type=int, metavar="SEC",
+                    help="with --every: stop after about this long (used by the GitHub workflow)")
     ap.add_argument("--profile", default=str(ROOT / "profile.json"))
     ap.add_argument("--test-alert", action="store_true", help="send a test notification and exit")
     a = ap.parse_args()
@@ -169,6 +171,7 @@ def main():
         p[key] = os.environ.get(f"IISM_{key.upper()}") or p.get(key, "")
     print(f"Checking: {p['course']} / {p['level']} / state {p.get('state') or '(none)'}")
 
+    start, wait = time.time(), max(a.every or 0, 120)
     while True:
         now = f"{datetime.now():%H:%M:%S}"
         try:
@@ -184,9 +187,9 @@ def main():
                 return 3  # non-zero on purpose: a "failed" GitHub run also emails you
         except Exception as e:  # site busy / down: just try again next round
             print(f"{now}  couldn't check: {str(e)[:100]}")
-        if not a.every:
+        if not a.every or (a.duration and time.time() - start + wait > a.duration):
             return 0
-        time.sleep(max(a.every, 120))
+        time.sleep(wait)
 
 
 if __name__ == "__main__":
