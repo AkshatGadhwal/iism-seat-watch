@@ -1,7 +1,7 @@
 name: IISM seat check
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes (GitHub may run it a few minutes late)
+    - cron: "3-58/5 * * * *"  # every 5 min at :03, :08, ... (off-peak) (GitHub may run it a few minutes late)
   workflow_dispatch:         # "Run workflow" button for a manual check
     inputs:
       test_alert:
